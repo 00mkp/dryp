@@ -58,6 +58,18 @@ import Testing
         #expect(h.runs[0].2["DRYP_SOURCE"] == "/old/src")
     }
 
+    @Test func aCheckoutWithoutAnUpstreamReinstallsFromTheLocalSource() throws {
+        let h = try CLIHarness()
+        h.hasUpstream = false
+        let source = h.paths.home.appendingPathComponent("src")
+        try FileManager.default.createDirectory(at: source.appendingPathComponent(".git"), withIntermediateDirectories: true)
+        FileManager.default.createFile(atPath: source.appendingPathComponent("install.sh").path, contents: Data())
+        try writeManifest(h, source: source.path)
+        #expect(h.dryp("update") == 0)
+        #expect(h.runs.map { $0.0 } == ["/bin/bash"])
+        #expect(h.out.contains { $0.contains("no upstream") })
+    }
+
     @Test func failedPullStopsTheUpdate() throws {
         let h = try CLIHarness()
         let source = h.paths.home.appendingPathComponent("src")

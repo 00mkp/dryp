@@ -70,6 +70,9 @@ struct Update: ParsableCommand {
             source.source = root.path
             // The given folder (or temp unpack) isn't where future updates should come from.
             environment["DRYP_SOURCE"] = manifest.source
+        } else if FileManager.default.fileExists(atPath: "\(manifest.source)/.git"), !env.hasUpstream(manifest.source) {
+            // A local checkout with no remote (or no tracking branch): nothing to pull, so rebuild what's there.
+            env.out("==> \(manifest.source) has no upstream to pull from; reinstalling from the local source")
         } else if FileManager.default.fileExists(atPath: "\(manifest.source)/.git") {
             env.out("==> Pulling \(manifest.source)")
             guard env.run("/usr/bin/git", ["-C", manifest.source, "pull", "--ff-only"], [:]) == 0 else {

@@ -42,6 +42,7 @@ final class CLIHarness {
     var stopCalls = 0
     var runs: [(String, [String], [String: String])] = []
     var runStatus: Int32 = 0
+    var hasUpstream = true
     var nosleepInstalled = true
     var sleepReadOverride: Bool?? = nil
     var out: [String] = []
@@ -85,6 +86,7 @@ final class CLIHarness {
                 self.runs.append((path, args, environment))
                 return self.runStatus
             },
+            hasUpstream: { [unowned self] _ in self.hasUpstream },
             waitTimeout: 0.2,
             pollInterval: 0.01,
             out: { [unowned self] in self.out.append($0) },
