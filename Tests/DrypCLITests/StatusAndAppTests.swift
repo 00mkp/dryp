@@ -62,6 +62,15 @@ import Testing
         #expect(h.out.last == "dryp stopped; sleep is enabled")
     }
 
+    @Test func appStopWithUnreadableSleepStateExitsOne() throws {
+        let h = try CLIHarness()
+        h.dryp("nosleep")
+        h.sleep.ineffectiveSets = 5
+        h.sleepReadOverride = .some(nil)
+        #expect(h.dryp("app", "stop") == 1)
+        #expect(h.err.last?.contains("couldn't be read") == true)
+    }
+
     @Test func appStopReportsAFailedRestore() throws {
         let h = try CLIHarness()
         h.dryp("nosleep")

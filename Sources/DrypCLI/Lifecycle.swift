@@ -16,6 +16,14 @@ enum Lifecycle {
         return nil
     }
 
+    /// The recorded app folder, or ~/Applications when it is empty, relative or "/".
+    static func safeAppDir(_ recorded: String, env: CLIEnvironment) -> String {
+        if recorded.hasPrefix("/") && recorded != "/" { return recorded }
+        let fallback = env.paths.home.appendingPathComponent("Applications").path
+        env.err("dryp: the recorded app folder '\(recorded)' isn't usable; using \(fallback)")
+        return fallback
+    }
+
     /// Unpacks an archive into a temp folder and returns the folder containing install.sh.
     static func unpack(_ archive: String, kind: ArchiveKind, env: CLIEnvironment) -> URL? {
         let dest = FileManager.default.temporaryDirectory.appendingPathComponent("dryp-update-\(UUID().uuidString)")
@@ -43,7 +51,9 @@ struct Update: ParsableCommand {
             throw ExitCode(1)
         }
         var source = manifest
-        var environment = ["APP_DIR": manifest.appDir]
+        var unpackedRoot: URL?
+        defer { if let unpackedRoot { try? FileManager.default.removeItem(at: unpackedRoot) } }
+        var environment = ["APP_DIR": Lifecycle.safeAppDir(manifest.appDir, env: env)]
 
         if let path {
             let root: URL
@@ -53,6 +63,7 @@ struct Update: ParsableCommand {
                     throw ExitCode(1)
                 }
                 root = unpacked
+                unpackedRoot = unpacked
             } else {
                 root = URL(fileURLWithPath: path)
             }
@@ -67,8 +78,11 @@ struct Update: ParsableCommand {
             }
         }
 
-        let status = env.run("/bin/bash", Lifecycle.installArguments(source), environment)
-        if status != 0 { throw ExitCode(status) }
+        guard FileManager.default.fileExists(atPath: "\(source.source)/install.sh") else {
+            env.err("dryp: no install.sh in \(source.source); run `dryp update <path-to-dryp-source>`")
+            throw ExitCode(1)
+        }
+        if env.run("/bin/bash", Lifecycle.installArguments(source), environment) != 0 { throw ExitCode(1) }
     }
 }
 
@@ -83,14 +97,22 @@ struct Uninstall: ParsableCommand {
         let fm = FileManager.default
 
         _ = env.agent.stop()
-        if AppliedStore(paths: env.paths).read().nosleepSet && env.readSleepDisabled() == true && !force {
-            env.err("dryp: couldn't restore sleep, so nothing was removed. Fix it with `\(PmsetCommand.manualRestore)` "
-                    + "and run `dryp uninstall` again, or pass --force.")
-            throw ExitCode(1)
+        var forcedPast = false
+        if AppliedStore(paths: env.paths).read().nosleepSet {
+            let readback = env.readSleepDisabled()
+            if readback != false {
+                if !force {
+                    let why = readback == nil ? "SleepDisabled couldn't be read" : "couldn't restore sleep"
+                    env.err("dryp: \(why), so nothing was removed. Check with `pmset -g live`, fix it with "
+                            + "`\(PmsetCommand.manualRestore)` and run `dryp uninstall` again, or pass --force.")
+                    throw ExitCode(1)
+                }
+                forcedPast = true
+            }
         }
 
         _ = env.run("/bin/launchctl", ["bootout", Launchctl.target], [:])
-        let appDir = Manifest.read(env.paths)?.appDir ?? env.paths.home.appendingPathComponent("Applications").path
+        let appDir = Lifecycle.safeAppDir(Manifest.read(env.paths)?.appDir ?? "", env: env)
         let targets = [
             env.paths.launchAgentPlist,
             URL(fileURLWithPath: appDir).appendingPathComponent("dryp.app"),
@@ -106,6 +128,13 @@ struct Uninstall: ParsableCommand {
                 env.out("removed \(url.path)")
             } catch {
                 env.err("dryp: couldn't remove \(url.path): \(error.localizedDescription)")
+            }
+        }
+
+        if forcedPast {
+            _ = env.run("/usr/bin/sudo", ["-k", "-n", "/usr/bin/pmset", "-a", "disablesleep", "0"], [:])
+            if env.readSleepDisabled() != false {
+                env.err("dryp: sleep may still be disabled; run: sudo pmset -a disablesleep 0")
             }
         }
 

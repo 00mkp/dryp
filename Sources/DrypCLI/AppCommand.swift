@@ -35,9 +35,18 @@ struct AppCommand: ParsableCommand {
                 env.err("dryp: the agent didn't exit within 10 seconds")
                 throw ExitCode(1)
             }
-            if AppliedStore(paths: env.paths).read().nosleepSet && env.readSleepDisabled() == true {
-                env.err("dryp: stopped, but sleep is still disabled; run: \(PmsetCommand.manualRestore)")
-                throw ExitCode(1)
+            if AppliedStore(paths: env.paths).read().nosleepSet {
+                switch env.readSleepDisabled() {
+                case true?:
+                    env.err("dryp: stopped, but sleep is still disabled; run: \(PmsetCommand.manualRestore)")
+                    throw ExitCode(1)
+                case nil:
+                    env.err("dryp: stopped, but SleepDisabled couldn't be read; check with `pmset -g live` "
+                            + "and if needed run: \(PmsetCommand.manualRestore)")
+                    throw ExitCode(1)
+                case false?:
+                    break
+                }
             }
             env.out("dryp stopped; sleep is enabled")
         }
