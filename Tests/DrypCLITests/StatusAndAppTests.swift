@@ -53,6 +53,21 @@ import Testing
         #expect(h.out.last == "dryp is running (pid 4411)")
     }
 
+    @Test func appStartWithRunningAgentLeavesNoMarker() throws {
+        let h = try CLIHarness()
+        h.agentRunning = true
+        #expect(h.dryp("app", "start") == 0)
+        #expect(!FileManager.default.fileExists(atPath: h.paths.startMarker.path))
+    }
+
+    @Test func appStopWithForeignDisablesleepSaysStillDisabled() throws {
+        let h = try CLIHarness()
+        h.sleep.disabled = true
+        h.sleep.ineffectiveSets = 5
+        #expect(h.dryp("app", "stop") == 0)
+        #expect(h.out.last?.contains("still disabled") == true)
+    }
+
     @Test func appStopShutsDownAndRestores() throws {
         let h = try CLIHarness()
         h.dryp("nosleep")

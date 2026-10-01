@@ -13,7 +13,7 @@ struct AppCommand: ParsableCommand {
 
         func run() throws {
             let env = CLIEnvironment.current
-            StartMarker.touch(env.paths)
+            if env.agent.pid() == nil { StartMarker.touch(env.paths) }
             _ = env.agent.start()
             let deadline = Date().addingTimeInterval(env.waitTimeout)
             while env.agent.pid() == nil && Date() < deadline { Thread.sleep(forTimeInterval: env.pollInterval) }
@@ -35,20 +35,24 @@ struct AppCommand: ParsableCommand {
                 env.err("dryp: the agent didn't exit within 10 seconds")
                 throw ExitCode(1)
             }
-            if AppliedStore(paths: env.paths).read().nosleepSet {
-                switch env.readSleepDisabled() {
-                case true?:
+            let owned = AppliedStore(paths: env.paths).read().nosleepSet
+            switch env.readSleepDisabled() {
+            case true?:
+                if owned {
                     env.err("dryp: stopped, but sleep is still disabled; run: \(PmsetCommand.manualRestore)")
                     throw ExitCode(1)
-                case nil:
+                }
+                env.out("dryp stopped; sleep is still disabled (not by dryp) — run: \(PmsetCommand.manualRestore)")
+            case nil:
+                if owned {
                     env.err("dryp: stopped, but SleepDisabled couldn't be read; check with `pmset -g live` "
                             + "and if needed run: \(PmsetCommand.manualRestore)")
                     throw ExitCode(1)
-                case false?:
-                    break
                 }
+                env.out("dryp stopped; couldn't read SleepDisabled")
+            case false?:
+                env.out("dryp stopped; sleep is enabled")
             }
-            env.out("dryp stopped; sleep is enabled")
         }
     }
 

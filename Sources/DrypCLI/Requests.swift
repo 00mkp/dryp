@@ -14,7 +14,11 @@ enum Requests {
             env.err("dryp: \(error)")
             return 1
         }
-        guard let applied = awaitAck(rev: written.rev, env: env) else { return notResponding(env) }
+        guard let applied = awaitAck(rev: written.rev, env: env) else {
+            // Roll back (only this exact session) so the agent can't apply it later after we said it failed.
+            _ = try? store.clear([mode: session])
+            return notResponding(env, cancelled: true)
+        }
         if let r = applied.rejected, r.mode == mode, r.rev >= written.rev {
             env.err("dryp: \(r.reason)")
             return 1
@@ -95,8 +99,9 @@ enum Requests {
         return poll()
     }
 
-    private static func notResponding(_ env: CLIEnvironment) -> Int32 {
-        env.err("dryp: the dryp agent isn't responding (see \(env.paths.logFile.path))")
+    private static func notResponding(_ env: CLIEnvironment, cancelled: Bool = false) -> Int32 {
+        env.err("dryp: the dryp agent isn't responding (see \(env.paths.logFile.path))"
+                + (cancelled ? "; the request was cancelled" : ""))
         return 1
     }
 }

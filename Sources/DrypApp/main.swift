@@ -8,8 +8,9 @@ let log = FileLog(url: paths.logFile)
 // DRYP_DEV=1 runs in place for development (`DRYP_DEV=1 swift run DrypApp`).
 let environment = ProcessInfo.processInfo.environment
 if environment["XPC_SERVICE_NAME"] != Paths.label && environment["DRYP_DEV"] != "1" {
-    StartMarker.touch(paths)
-    if !AgentControl.live(paths: paths).start() { log.write("handoff: couldn't start the launchd agent") }
+    let agent = AgentControl.live(paths: paths)
+    if agent.pid() == nil { StartMarker.touch(paths) }
+    if !agent.start() { log.write("handoff: couldn't start the launchd agent") }
     exit(0)
 }
 

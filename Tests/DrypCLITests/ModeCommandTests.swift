@@ -108,6 +108,8 @@ import Testing
         #expect(h.dryp("caf", "30") == 1)
         #expect(h.startCalls == 1)          // one retry
         #expect(h.err.last?.contains("isn't responding") == true)
+        #expect(h.err.last?.contains("cancelled") == true)
+        #expect(h.state.caf == nil)         // rolled back so the agent can't apply it later
     }
 
     // Review Focus 2: odd durations are usage errors (exit 2) and never start anything.
