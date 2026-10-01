@@ -142,4 +142,33 @@ import Testing
         #expect(!w.sleep.disabled)
         #expect(w.logs.contains { $0.contains("state.json.bad") })
     }
+
+    @Test func stopWithRestoreRequestAttemptsOnceAndSchedulesFiveSeconds() throws {
+        let w = try runningNosleep()
+        w.sleep.ineffectiveSets = 5
+        let before = w.sleep.setCalls.count
+        try w.store.update { $0.nosleep = nil; $0.restoreSleep = true }
+        let wake = w.reconciler.reconcile()
+        #expect(w.sleep.setCalls.count == before + 1)
+        #expect(wake == w.clock.now.addingTimeInterval(5))
+    }
+
+    @Test func retakingOwnershipClearsRestoreFailure() throws {
+        let w = try runningNosleep()
+        w.sleep.ineffectiveSets = 1
+        try w.stop(.nosleep)
+        w.reconciler.reconcile()
+        #expect(w.appliedStore.read().restoreFailed)
+        w.clock.advance(10)
+        try w.request(.nosleep, for: nil)
+        let wake = w.reconciler.reconcile()
+        #expect(!w.appliedStore.read().restoreFailed)
+        #expect(wake == nil || wake! >= w.clock.now)
+
+        w.sleep.ineffectiveSets = 1
+        try w.stop(.nosleep)
+        let wake2 = w.reconciler.reconcile()
+        #expect(w.notifier.posted == [.restoreFailed, .restoreFailed])
+        #expect(wake2 == w.clock.now.addingTimeInterval(5))
+    }
 }

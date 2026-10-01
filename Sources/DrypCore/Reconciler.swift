@@ -99,13 +99,15 @@ public final class Reconciler {
             log("caf: assertions released")
         }
 
+        var restoreAttempted = false
         if decision.disableSleep {
             if !disableSleep(rev: current.rev), let s = current.nosleep { current = clear([.nosleep: s], fallback: current) }
         } else {
-            restoreSleepIfOwned(at: t)
+            restoreAttempted = restoreSleepIfOwned(at: t)
         }
 
-        current = handleRestoreRequest(current, disabling: decision.disableSleep && current.nosleep != nil)
+        current = handleRestoreRequest(current, disabling: decision.disableSleep && current.nosleep != nil,
+                                       restoreAttempted: restoreAttempted)
 
         let live = sleep.read()
         foreign = live == true && !applied.nosleepSet
@@ -135,7 +137,7 @@ public final class Reconciler {
             wake = max(wake ?? earliest, earliest)
         }
         let retry = applied.restoreFailed ? nextRetry : nil
-        return [wake, retry].compactMap { $0 }.min()
+        return [wake, retry].compactMap { $0 }.min().map { max($0, t) }
     }
 
     /// Adds `seconds` to a timed session's deadline. No-op for unlimited or stopped modes.
@@ -210,6 +212,7 @@ public final class Reconciler {
         if sleep.read() == true {
             if !applied.nosleepSet { log("nosleep: sleep was already disabled; dryp now owns it") }
             applied.nosleepSet = true
+            clearRestoreFailure()
             return true
         }
         sleep.set(disabled: true)
@@ -218,14 +221,23 @@ public final class Reconciler {
             return false
         }
         applied.nosleepSet = true
+        clearRestoreFailure()
         log("nosleep: sleep disabled")
         return true
     }
 
+    private func clearRestoreFailure() {
+        applied.restoreFailed = false
+        restoreFailures = 0
+        nextRetry = nil
+    }
+
     /// Restores sleep if dryp set it. On failure: flag, notify once, and retry on the backoff schedule.
-    private func restoreSleepIfOwned(at t: Date) {
-        guard applied.nosleepSet else { return }
-        if applied.restoreFailed, let next = nextRetry, t < next { return }
+    /// Returns whether it ran pmset this pass.
+    @discardableResult
+    private func restoreSleepIfOwned(at t: Date) -> Bool {
+        guard applied.nosleepSet else { return false }
+        if applied.restoreFailed, let next = nextRetry, t < next { return false }
         sleep.set(disabled: false)
         if sleep.read() == false {
             applied.nosleepSet = false
@@ -241,16 +253,20 @@ public final class Reconciler {
             applied.restoreFailed = true
             log("nosleep: restore failed, retrying in \(Int(delay))s")
         }
+        return true
     }
 
     /// The one-shot `restoreSleep` request (`dryp nosleep off`, `dryp off`, menu Restore Sleep / Retry):
     /// undo a foreign disablesleep or retry a failed restore now. Ignored while nosleep is wanted.
-    private func handleRestoreRequest(_ current: DrypState, disabling: Bool) -> DrypState {
+    private func handleRestoreRequest(_ current: DrypState, disabling: Bool, restoreAttempted: Bool) -> DrypState {
         guard current.restoreSleep else { return current }
         if !disabling {
             if applied.nosleepSet {
-                nextRetry = nil
-                restoreSleepIfOwned(at: now())
+                // Only bypass a pending backoff; a pass that already tried must not try twice.
+                if !restoreAttempted {
+                    nextRetry = nil
+                    restoreSleepIfOwned(at: now())
+                }
             } else if sleep.read() == true {
                 sleep.set(disabled: false)
                 log(sleep.read() == false ? "restored sleep disabled outside dryp (by request)"
