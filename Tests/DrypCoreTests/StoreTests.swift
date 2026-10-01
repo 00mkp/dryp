@@ -41,6 +41,7 @@ import Testing
     @Test func revKeepsRisingAfterTheFileIsDeleted() throws {
         let s1 = try store.update { $0.caf = session(for: nil) }
         try FileManager.default.removeItem(at: paths.stateFile)
+        Thread.sleep(forTimeInterval: 0.002)  // rev falls back to wall-clock ms after a deleted file, so the two writes must land in different milliseconds
         let s2 = try store.update { $0.nosleep = session(for: nil) }
         #expect(s2.rev > s1.rev)
     }
