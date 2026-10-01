@@ -326,17 +326,8 @@ whatever the setting.
   (user from `id -un`) to a temp file, checks it with `visudo -cf`, and only
   then runs `sudo install -m 0440 -o root -g wheel` into `/etc/sudoers.d/dryp`.
   A failed check aborts that step and leaves sudoers untouched.
-- Does not edit `~/.zshrc`. It prints a suggested alias block and notes that
-  the old `nosleep` function and the startup warning should be removed, since
-  they would shadow `dryp`'s behaviour:
-  ```sh
-  alias halfcaf='dryp caf 30'   halfhalfcaf='dryp caf 45'   onecaf='dryp caf 60'
-  alias twocaf='dryp caf 2 -h'  fourcaf='dryp caf 4 -h'     eightcaf='dryp caf 8 -h'
-  mincaf()  { dryp caf "$1"; }
-  hourcaf() { dryp caf "$1" -h; }
-  nosleep() { dryp nosleep "$@"; }
-  alias nosleep-on='dryp nosleep'  nosleep-off='dryp nosleep off'
-  ```
+- Does not edit shell config. It ends with a short quick-start (a few example
+  commands and `dryp --help`).
 - Prints a PATH note if `~/.local/bin` is missing, as mutewake does.
 
 **`dryp update [PATH]`** — `git pull` in the recorded source (or uses PATH),

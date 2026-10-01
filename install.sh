@@ -174,17 +174,15 @@ cat <<'DONE'
 
 dryp is installed and running.
 
-To replace your old aliases, put this in ~/.zshrc (and delete the old nosleep function and the
-"sleep is DISABLED" startup check — they would shadow dryp):
+Quick start:
 
-  alias halfcaf='dryp caf 30' halfhalfcaf='dryp caf 45' onecaf='dryp caf 60'
-  alias twocaf='dryp caf 2 -h' fourcaf='dryp caf 4 -h' eightcaf='dryp caf 8 -h'
-  mincaf()  { dryp caf "$1"; }
-  hourcaf() { dryp caf "$1" -h; }
-  nosleep() { dryp nosleep "$@"; }
-  alias nosleep-on='dryp nosleep' nosleep-off='dryp nosleep off'
+  dryp caf 30          keep the screen and everything on for 30 minutes
+  dryp nosleep 2 -h    let the lid close for 2 hours (if nosleep is enabled)
+  dryp off             stop both
+  dryp status          what's running, and the real sleep setting
+  dryp --help          everything else
 
-Try:  dryp status
+The cup and laptop in the menu bar do the same from a menu.
 DONE
 
 case ":$PATH:" in
