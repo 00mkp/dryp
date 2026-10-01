@@ -68,7 +68,7 @@ dryp --help                     long form only: -h means hours
 ```
 
 - **Numbers.** Minutes must be whole and ≥ 1. Hours (`-h`) accept decimals
-  (`1.5`) and must produce ≥ 1 minute. Anything else is a usage error, exit 2.
+  (`1.5`) and must produce ≥ 1 minute. The maximum is 8760 hours (one year). Anything else is a usage error, exit 2.
 - **Replace semantics.** Starting a mode that is already running replaces that
   mode's deadline (and its no-limit flag). The other mode is untouched.
 - **Honest results.** The CLI writes the request, then waits up to 2 s for the
@@ -107,10 +107,18 @@ read by the agent:
   "rev": 17,
   "caf":     { "started": "2026-09-30T16:10:00Z", "until": "2026-09-30T16:52:00Z" },
   "nosleep": null,
+  "restoreSleep": false,
   "prefs":   { "showTimeCaf": false, "showTimeNosleep": false, "openAtLogin": true } }
 ```
 
 - A mode that is `null` is off; `until: null` means no limit.
+- `restoreSleep` is a one-shot request (set by `dryp nosleep off`, `dryp off`,
+  and the menu's Restore Sleep / Retry): the agent sets `disablesleep 0` even
+  if dryp didn't set it, retries a failed restore immediately, then clears the
+  flag. This is the only way a foreign `disablesleep 1` is undone — always by
+  explicit request.
+- `rev` is a monotonic revision: `max(previous + 1, current Unix time in ms)`,
+  so it keeps rising even if `state.json` is deleted and recreated.
 - Every write is a read-modify-write under an exclusive `flock` on
   `~/.config/dryp/state.lock`, written to a temp file and renamed into place.
   Every write increments `rev`.
