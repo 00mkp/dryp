@@ -36,6 +36,22 @@ import Testing
         #expect(!applied.restoreFailed && !applied.nosleepSet)
     }
 
+    @Test func failingRetryAfterAgentRestartStillNotifiesOnce() throws {
+        let w = try World()
+        var persisted = Applied()
+        persisted.nosleepSet = true
+        persisted.restoreFailed = true
+        try w.appliedStore.write(persisted)
+        w.sleep.disabled = true
+        w.sleep.ineffectiveSets = 100
+        w.restartAgent()
+        w.reconciler.reconcile()
+        #expect(w.notifier.posted == [.restoreFailed])
+        w.clock.advance(60)
+        w.reconciler.reconcile()
+        #expect(w.notifier.posted == [.restoreFailed])          // not again in the same process
+    }
+
     @Test func failedRestoreIsNotForeign() throws {
         let w = try runningNosleep()
         w.sleep.ineffectiveSets = 1

@@ -20,6 +20,7 @@ public final class Reconciler {
 
     private var warned = Set<WarningKey>()
     private var foreignNotified = false
+    private var restoreFailureNotified = false
     private var restoreFailures = 0
     private var nextRetry: Date?
 
@@ -178,6 +179,7 @@ public final class Reconciler {
             if restored {
                 applied.nosleepSet = false
                 applied.restoreFailed = false
+                persistApplied()
                 log("shutdown: sleep restored")
             } else {
                 applied.restoreFailed = true
@@ -213,6 +215,7 @@ public final class Reconciler {
             if !applied.nosleepSet { log("nosleep: sleep was already disabled; dryp now owns it") }
             applied.nosleepSet = true
             clearRestoreFailure()
+            persistApplied()
             return true
         }
         sleep.set(disabled: true)
@@ -222,12 +225,14 @@ public final class Reconciler {
         }
         applied.nosleepSet = true
         clearRestoreFailure()
+        persistApplied()
         log("nosleep: sleep disabled")
         return true
     }
 
     private func clearRestoreFailure() {
         applied.restoreFailed = false
+        restoreFailureNotified = false
         restoreFailures = 0
         nextRetry = nil
     }
@@ -242,14 +247,16 @@ public final class Reconciler {
         if sleep.read() == false {
             applied.nosleepSet = false
             log(applied.restoreFailed ? "nosleep: sleep restored after \(restoreFailures) failed attempts" : "nosleep: sleep restored")
-            applied.restoreFailed = false
-            restoreFailures = 0
-            nextRetry = nil
+            clearRestoreFailure()
+            persistApplied()
         } else {
             restoreFailures += 1
             let delay = Schedule.retryDelay(afterFailures: restoreFailures)
             nextRetry = t.addingTimeInterval(delay)
-            if !applied.restoreFailed { notifier.post(.restoreFailed) }
+            if !restoreFailureNotified {
+                restoreFailureNotified = true
+                notifier.post(.restoreFailed)
+            }
             applied.restoreFailed = true
             log("nosleep: restore failed, retrying in \(Int(delay))s")
         }
