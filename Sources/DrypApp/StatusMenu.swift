@@ -43,6 +43,7 @@ final class StatusMenu: NSObject, NSMenuDelegate {
     }
 
     func menuWillOpen(_ menu: NSMenu) {
+        liveTimer?.invalidate()
         let t = Timer(timeInterval: 5, repeats: true) { [weak self] _ in self?.refreshStatusRows() }
         RunLoop.main.add(t, forMode: .eventTracking)
         liveTimer = t
@@ -123,6 +124,7 @@ final class StatusMenu: NSObject, NSMenuDelegate {
 
     private func plain(_ text: String, dot: Bool = false) -> NSMenuItem {
         let item = NSMenuItem(title: text, action: nil, keyEquivalent: "")
+        item.isEnabled = false
         if dot {
             let title = NSMutableAttributedString(string: text)
             title.append(NSAttributedString(string: "  ●", attributes: [.foregroundColor: NSColor.systemOrange]))

@@ -26,6 +26,7 @@ enum IconRenderer {
             if i > 0 { width += gap }
             width += glyph.size.width
             if let t = texts[i] { width += 2 + ceil(t.size().width) }
+            else if i == slots.count - 1, slots[i].unlimited || slots[i].alert { width += 2 }   // room for the dot's overhang
         }
 
         let image = NSImage(size: NSSize(width: max(width, 1), height: height), flipped: false) { _ in
@@ -33,10 +34,10 @@ enum IconRenderer {
             for (i, slot) in slots.enumerated() {
                 if i > 0 { x += gap }
                 let glyph = glyphs[i]
-                var color = NSColor.labelColor.withAlphaComponent(slot.active ? 1 : 0.45)
-                if slot.alert { color = .systemOrange }
+                let color: NSColor = slot.alert ? .systemOrange : .labelColor
+                let fraction: CGFloat = (slot.active || slot.alert) ? 1 : 0.45
                 let rect = NSRect(x: x, y: (height - glyph.size.height) / 2, width: glyph.size.width, height: glyph.size.height)
-                tinted(glyph, color).draw(in: rect)
+                tinted(glyph, color).draw(in: rect, from: .zero, operation: .sourceOver, fraction: fraction)
                 if slot.unlimited || slot.alert {
                     NSColor.systemOrange.setFill()
                     NSBezierPath(ovalIn: NSRect(x: rect.maxX - 4, y: rect.maxY - 4, width: 5, height: 5)).fill()
