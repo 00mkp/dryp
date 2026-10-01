@@ -47,20 +47,32 @@ cd "$SRC"
 echo "==> Building dryp $VERSION"
 swift build -c release --product dryp
 
-echo "==> Stopping any running agent (active sessions end and sleep is restored)"
-launchctl bootout "$DOMAIN/$LABEL" >/dev/null 2>&1 || true
-
-echo "==> Installing the dryp command"
-mkdir -p "$BINDIR" "$DATADIR"
-install -m 755 "$(swift build -c release --show-bin-path)/dryp" "$BINDIR/dryp"
-
-scripts/build-app.sh
-
 # --- nosleep: the sudoers rule -------------------------------------------------------------------
+# Runs before anything is stopped or replaced, and no failure here is fatal: a failed nosleep step
+# downgrades to caf-only with a warning instead of leaving a half-done install.
+TMP_RULE=""
+trap '[[ -z "$TMP_RULE" ]] || rm -f "$TMP_RULE"' EXIT
+
 rule_works() {
-  # -k ignores cached credentials, so only the NOPASSWD rule itself can make these succeed.
-  sudo -k -n -l /usr/bin/pmset -a disablesleep 0 >/dev/null 2>&1 &&
-  sudo -k -n -l /usr/bin/pmset -a disablesleep 1 >/dev/null 2>&1
+  # Re-applies the CURRENT SleepDisabled value: a no-op change that succeeds without a password only if
+  # a NOPASSWD rule covers exactly `pmset -a disablesleep <current>`. -k ignores cached credentials.
+  local current
+  current="$(pmset -g live | awk '/SleepDisabled/{print $2}')"
+  sudo -k -n /usr/bin/pmset -a disablesleep "${current:-0}" >/dev/null 2>&1
+}
+
+install_rule() {
+  TMP_RULE="$(mktemp)" || return 1
+  printf '%s ALL=(root) NOPASSWD: /usr/bin/pmset -a disablesleep 0, /usr/bin/pmset -a disablesleep 1\n' "$(id -un)" > "$TMP_RULE"
+  sudo /usr/bin/install -m 0440 -o root -g wheel "$TMP_RULE" "$SUDOERS.tmp" || return 1
+  # sudo ignores files with a dot in the name, so the staged .tmp file is inert until the final mv.
+  if ! sudo /usr/sbin/visudo -c -f "$SUDOERS.tmp" >/dev/null; then
+    sudo /bin/rm -f "$SUDOERS.tmp"
+    echo "warning: the generated sudoers rule failed visudo -c; sudoers was left untouched" >&2
+    return 1
+  fi
+  sudo /bin/mv "$SUDOERS.tmp" "$SUDOERS" || { sudo /bin/rm -f "$SUDOERS.tmp"; return 1; }
+  rule_works || { echo "warning: installed $SUDOERS, but sudo still asks for a password for pmset" >&2; return 1; }
 }
 
 if [[ "$NOSLEEP" == ask ]]; then
@@ -68,7 +80,7 @@ if [[ "$NOSLEEP" == ask ]]; then
     echo
     echo "Enable nosleep (lid-closed mode)? This adds $SUDOERS, allowing only"
     printf '`pmset -a disablesleep 0` and `1` without a password. [Y/n] '
-    read -r reply
+    read -r reply || reply=""
     case "$reply" in [nN]*) NOSLEEP=no ;; *) NOSLEEP=yes ;; esac
   else
     echo "note: not a terminal, so nosleep is left off (rerun with --nosleep to enable it)"
@@ -77,26 +89,31 @@ if [[ "$NOSLEEP" == ask ]]; then
 fi
 
 if [[ "$NOSLEEP" == yes ]]; then
-  if [[ -f "$SUDOERS" ]] && rule_works; then
+  if rule_works; then
     echo "==> nosleep: sudoers rule already in place"
   else
     echo "==> nosleep: installing $SUDOERS (sudo will ask for your password)"
-    TMP_RULE="$(mktemp)"
-    printf '%s ALL=(root) NOPASSWD: /usr/bin/pmset -a disablesleep 0, /usr/bin/pmset -a disablesleep 1\n' "$(id -un)" > "$TMP_RULE"
-    if ! sudo /usr/sbin/visudo -c -f "$TMP_RULE" >/dev/null; then
-      rm -f "$TMP_RULE"
-      die "the generated sudoers rule failed visudo -c; sudoers was left untouched"
+    if ! install_rule; then
+      echo "warning: nosleep could not be enabled; continuing with caf only (rerun with --nosleep to retry)" >&2
+      NOSLEEP=no
     fi
-    sudo /usr/bin/install -m 0440 -o root -g wheel "$TMP_RULE" "$SUDOERS"
-    rm -f "$TMP_RULE"
-    rule_works || die "installed $SUDOERS, but sudo still asks for a password for pmset"
   fi
 else
   if [[ -f "$SUDOERS" ]]; then
     echo "==> nosleep: removing $SUDOERS"
-    sudo /bin/rm -f "$SUDOERS"
+    sudo /bin/rm -f "$SUDOERS" || echo "warning: could not remove $SUDOERS; remove it manually with: sudo rm $SUDOERS" >&2
   fi
 fi
+
+echo "==> Stopping any running agent (active sessions end and sleep is restored)"
+launchctl bootout "$DOMAIN/$LABEL" >/dev/null 2>&1 || true
+pkill -f "$APP_DIR/dryp.app/Contents/MacOS/dryp" 2>/dev/null || true
+
+echo "==> Installing the dryp command"
+mkdir -p "$BINDIR" "$DATADIR"
+install -m 755 "$(swift build -c release --show-bin-path)/dryp" "$BINDIR/dryp"
+
+scripts/build-app.sh
 
 # --- launchd agent -------------------------------------------------------------------------------
 echo "==> Generating the launchd agent"
@@ -139,9 +156,9 @@ MANIFEST_EOF
 
 echo "==> Starting"
 touch "$DATADIR/start"     # stay in the menu bar this launch even if Open at Login is off
-launchctl bootstrap "$DOMAIN" "$PLIST" 2>/dev/null || true
+launchctl bootstrap "$DOMAIN" "$PLIST" || true
 sleep 1
-launchctl print "$DOMAIN/$LABEL" >/dev/null 2>&1 || die "the agent didn't start. See ~/Library/Logs/dryp.err.log"
+[[ "$(launchctl print "$DOMAIN/$LABEL" 2>/dev/null)" == *"pid = "* ]] || die "the agent didn't start. See ~/Library/Logs/dryp.err.log"
 
 cat <<'DONE'
 
