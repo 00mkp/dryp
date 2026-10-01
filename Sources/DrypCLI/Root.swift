@@ -7,7 +7,7 @@ public struct Dryp: ParsableCommand {
         commandName: "dryp",
         abstract: "Keep your Mac awake: caf (screen and everything on) and nosleep (lid can close).",
         version: DrypVersion.current,
-        subcommands: [Caf.self, Nosleep.self, Off.self, Status.self, AppCommand.self],
+        subcommands: [Caf.self, Nosleep.self, Off.self, Status.self, AppCommand.self, Update.self, Uninstall.self],
         // -h means hours, so help is long-form only (inherited by every subcommand).
         helpNames: [.long])
 
