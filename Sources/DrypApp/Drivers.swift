@@ -16,6 +16,7 @@ final class IOPMCafAssertions: PowerAssertions {
     private static let types = ["PreventUserIdleDisplaySleep", "PreventUserIdleSystemSleep",
                                 "PreventDiskIdle", "PreventSystemSleep"]
     private var ids: [IOPMAssertionID] = []
+    private var userActivityID = IOPMAssertionID(0)
 
     var isHeld: Bool { !ids.isEmpty }
 
@@ -33,14 +34,19 @@ final class IOPMCafAssertions: PowerAssertions {
             taken.append(id)
         }
         // -u: declare the user active once, which also wakes the display if it was off.
-        var user = IOPMAssertionID(0)
+        var user = userActivityID   // reuse the ID so repeated holds don't leak assertions
         _ = IOPMAssertionDeclareUserActivity("dryp caf" as CFString, kIOPMUserActiveLocal, &user)
+        userActivityID = user
         ids = taken
     }
 
     func release() {
         ids.forEach { IOPMAssertionRelease($0) }
         ids = []
+        if userActivityID != 0 {
+            IOPMAssertionRelease(userActivityID)
+            userActivityID = 0
+        }
     }
 }
 

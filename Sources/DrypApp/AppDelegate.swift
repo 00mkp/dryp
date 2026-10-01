@@ -28,11 +28,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             now: Date.init, bootTime: BootTime.current(), log: log.write)
         log.write("agent started (dryp \(DrypVersion.current))")
 
+        installSigterm()
         let next = reconciler.reconcile()
         if LoginCheck.shouldExit(state: reconciler.state, applied: reconciler.applied,
                                  foreign: reconciler.foreign, startRequested: startRequested) {
             log.write("login check: nothing to watch and Open at Login is off; exiting")
-            exit(0)
+            // Notification posts are async; give an end notice from that first reconcile time to be delivered.
+            DispatchQueue.main.asyncAfter(deadline: .now() + 3) { exit(0) }
+            return
         }
 
         notifier.onExtend = { [weak self] mode in
@@ -47,7 +50,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             forName: NSWorkspace.didWakeNotification, object: nil, queue: .main) { [weak self] _ in self?.reconcile() }
         NotificationCenter.default.addObserver(
             forName: .NSSystemClockDidChange, object: nil, queue: .main) { [weak self] _ in self?.reconcile() }
-        installSigterm()
         arm(next)
         menu?.refresh()
     }
@@ -134,6 +136,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     /// Clears both modes, releases caf, restores sleep, and exits only once SleepDisabled reads 0 — or, when
     /// interactive, when the user picks Quit Anyway. Exit status 0 so launchd doesn't respawn a deliberate quit.
     private func shutdownAndExit(interactive: Bool) {
+        if shuttingDown {
+            log.write("shutdown: already in progress; exiting")
+            exit(0)
+        }
         shuttingDown = true
         timer?.invalidate()
         while !reconciler.shutdown() {
