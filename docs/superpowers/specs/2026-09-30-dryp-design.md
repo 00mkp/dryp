@@ -200,6 +200,16 @@ They are template images (light/dark automatic), except the orange dot.
 time remaining at minute precision (`42m`, `3h12m`) or `∞` for no limit (the
 dot stays). Neither, one, or both can be on.
 
+### App icon
+
+`Dryp.app` has a real icon, so Finder, Spotlight, System Settings (Login Items,
+Notifications) and the About panel show it even though there is no Dock icon.
+Like peel, it is drawn in code and turned into an `.icns` at build time — no
+binary is checked in: the white `cup.and.saucer.fill` glyph on a warm
+coffee-brown gradient tile, on the macOS icon grid (an 824/1024 rounded square,
+centred, with a soft shadow). A small `dryp-icon` executable writes the
+`.iconset`; `build-app.sh` runs `iconutil` and sets `CFBundleIconFile`.
+
 ### Dropdown
 
 ```
@@ -355,6 +365,8 @@ Sources/
                          · Next-event scheduling (deadlines, warnings)
   DrypCLI/               ArgumentParser commands (help names: --help only)
   dryp/                  CLI executable
+  DrypIcon/              AppKit drawing of the app icon (tested for size and ink)
+  dryp-icon/             writes the .iconset for build-app.sh
   DrypApp/               AppKit agent: real drivers, watchers, status menu, single-instance handoff
 Tests/
   DrypCoreTests/         parsing, policy, scheduling, store, reconciler against fakes
