@@ -59,6 +59,7 @@ final class StatusMenu: NSObject, NSMenuDelegate {
     private func rebuild() {
         let r = app.reconciler!
         menu.removeAllItems()
+        rows = [:]
         menu.addItem(statusRow(.caf))
         menu.addItem(statusRow(.nosleep))
         if r.foreign {
@@ -99,11 +100,10 @@ final class StatusMenu: NSObject, NSMenuDelegate {
         return r.nosleepAvailable || r.state.nosleep != nil
     }
 
+    private var rows: [Mode: ToggleRow] = [:]
+
     private func refreshStatusRows() {
-        guard menu.numberOfItems >= 2 else { return }
-        for (index, mode) in Mode.allCases.enumerated() {
-            menu.item(at: index)?.attributedTitle = statusTitle(mode)
-        }
+        for (mode, row) in rows { updateRow(row, mode) }
         refresh()
     }
 
@@ -120,33 +120,14 @@ final class StatusMenu: NSObject, NSMenuDelegate {
         return ("\(Format.remaining(until.timeIntervalSince(Date()))) left", .systemGreen)
     }
 
-    /// "Caffeinate ········· ● 42m left": the name on the left, a grey detail and dot right-aligned on a
-    /// shared tab stop, so both rows line up (the same layout as mutewake's status rows).
-    private func statusTitle(_ mode: Mode) -> NSAttributedString {
-        let font = NSFont.menuFont(ofSize: 0)
+    private func updateRow(_ row: ToggleRow, _ mode: Mode) {
         let detail = statusDetail(mode)
-        let style = NSMutableParagraphStyle()
-        style.tabStops = [NSTextTab(textAlignment: .right, location: statusTabLocation(font: font))]
-        let title = NSMutableAttributedString(string: "\(mode.title)\t", attributes: [.font: font, .paragraphStyle: style])
-        title.append(NSAttributedString(string: "●  ", attributes: [
-            .font: NSFont.systemFont(ofSize: font.pointSize * 0.7), .foregroundColor: detail.dot,
-            .baselineOffset: font.pointSize * 0.12, .paragraphStyle: style]))
-        title.append(NSAttributedString(string: detail.text, attributes: [
-            .font: font, .foregroundColor: NSColor.secondaryLabelColor, .paragraphStyle: style]))
-        return title
-    }
-
-    /// Wide enough for the longest name plus the longest detail either row shows right now.
-    private func statusTabLocation(font: NSFont) -> CGFloat {
-        func width(_ s: String) -> CGFloat { (s as NSString).size(withAttributes: [.font: font]).width }
-        let names = Mode.allCases.map { width($0.title) }.max() ?? 0
-        let details = Mode.allCases.map { width("●  " + statusDetail($0).text) }.max() ?? 0
-        return max(220, ceil(names + 40 + details))
+        row.update(detail: detail.text, dot: detail.dot, enabled: mode == .caf || nosleepUsable)
     }
 
     /// Click while off: start the last length used. Click while on: stop.
     private func statusRow(_ mode: Mode) -> NSMenuItem {
-        let item = action("") { [weak self] in
+        let row = ToggleRow(title: mode.title) { [weak self] in
             guard let self else { return }
             if self.app.reconciler.state[mode] != nil {
                 self.app.stop([mode])
@@ -154,10 +135,10 @@ final class StatusMenu: NSObject, NSMenuDelegate {
                 self.app.request(mode, seconds: self.app.reconciler.state.prefs.lastLength(mode))
             }
         }
-        item.attributedTitle = statusTitle(mode)
-        item.isEnabled = mode == .caf || nosleepUsable
-        let detail = statusDetail(mode).text
-        item.setAccessibilityLabel("\(mode.title), \(detail)")
+        updateRow(row, mode)
+        rows[mode] = row
+        let item = NSMenuItem()
+        item.view = row
         return item
     }
 
