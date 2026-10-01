@@ -24,10 +24,8 @@ enum Lifecycle {
         return fallback
     }
 
-    /// Unpacks an archive into a temp folder and returns the folder containing install.sh.
-    static func unpack(_ archive: String, kind: ArchiveKind, env: CLIEnvironment) -> URL? {
-        let dest = FileManager.default.temporaryDirectory.appendingPathComponent("dryp-update-\(UUID().uuidString)")
-        try? FileManager.default.createDirectory(at: dest, withIntermediateDirectories: true)
+    /// Unpacks an archive into `dest` (which the caller creates and removes) and returns the folder containing install.sh.
+    static func unpack(_ archive: String, kind: ArchiveKind, into dest: URL, env: CLIEnvironment) -> URL? {
         let status = kind == .tarball
             ? env.run("/usr/bin/tar", ["-xzf", archive, "-C", dest.path], [:])
             : env.run("/usr/bin/ditto", ["-x", "-k", archive, dest.path], [:])
@@ -51,19 +49,21 @@ struct Update: ParsableCommand {
             throw ExitCode(1)
         }
         var source = manifest
-        var unpackedRoot: URL?
-        defer { if let unpackedRoot { try? FileManager.default.removeItem(at: unpackedRoot) } }
+        var unpackDir: URL?
+        defer { if let unpackDir { try? FileManager.default.removeItem(at: unpackDir) } }
         var environment = ["APP_DIR": Lifecycle.safeAppDir(manifest.appDir, env: env)]
 
         if let path {
             let root: URL
             if let kind = Lifecycle.archiveKind(path) {
-                guard let unpacked = Lifecycle.unpack(path, kind: kind, env: env) else {
+                let dest = FileManager.default.temporaryDirectory.appendingPathComponent("dryp-update-\(UUID().uuidString)")
+                try? FileManager.default.createDirectory(at: dest, withIntermediateDirectories: true)
+                unpackDir = dest
+                guard let unpacked = Lifecycle.unpack(path, kind: kind, into: dest, env: env) else {
                     env.err("dryp: couldn't unpack \(path), or it has no install.sh")
                     throw ExitCode(1)
                 }
                 root = unpacked
-                unpackedRoot = unpacked
             } else {
                 root = URL(fileURLWithPath: path)
             }
@@ -112,7 +112,8 @@ struct Uninstall: ParsableCommand {
         }
 
         _ = env.run("/bin/launchctl", ["bootout", Launchctl.target], [:])
-        let appDir = Lifecycle.safeAppDir(Manifest.read(env.paths)?.appDir ?? "", env: env)
+        let appDir = Manifest.read(env.paths).map { Lifecycle.safeAppDir($0.appDir, env: env) }
+            ?? env.paths.home.appendingPathComponent("Applications").path
         let targets = [
             env.paths.launchAgentPlist,
             URL(fileURLWithPath: appDir).appendingPathComponent("dryp.app"),

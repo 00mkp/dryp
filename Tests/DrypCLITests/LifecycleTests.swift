@@ -146,4 +146,58 @@ import Testing
         #expect(h.runs.isEmpty)
         #expect(h.err.last?.contains("no install.sh") == true)
     }
+
+    func makeTarball(_ h: CLIHarness) throws -> String {
+        let src = h.paths.home.appendingPathComponent("pack/dryp-src")
+        try FileManager.default.createDirectory(at: src, withIntermediateDirectories: true)
+        FileManager.default.createFile(atPath: src.appendingPathComponent("install.sh").path, contents: Data())
+        let archive = h.paths.home.appendingPathComponent("dryp-0.2.0.tar.gz").path
+        #expect(Shell.interactive("/usr/bin/tar", ["-czf", archive, "-C", h.paths.home.appendingPathComponent("pack").path, "dryp-src"],
+                                  environment: [:]) == 0)
+        return archive
+    }
+
+    @Test func unpackFindsTheInstallerInsideTheTopLevelFolder() throws {
+        let h = try CLIHarness()
+        let archive = try makeTarball(h)
+        var env = h.env
+        env.run = { Shell.interactive($0, $1, environment: $2) }
+        let dest = h.paths.home.appendingPathComponent("dest")
+        try FileManager.default.createDirectory(at: dest, withIntermediateDirectories: true)
+        let root = Lifecycle.unpack(archive, kind: .tarball, into: dest, env: env)
+        #expect(root?.lastPathComponent == "dryp-src")
+        #expect(root.map { FileManager.default.fileExists(atPath: $0.appendingPathComponent("install.sh").path) } == true)
+    }
+
+    @Test func updateFromAnArchiveRemovesItsWholeTempFolder() throws {
+        let h = try CLIHarness()
+        try writeManifest(h, source: "/old/src")
+        let archive = try makeTarball(h)
+        var env = h.env
+        var unpackDirs: [String] = []
+        env.run = { path, args, environment in
+            if path == "/usr/bin/tar", args.count == 4 {
+                unpackDirs.append(args[3])
+                return Shell.interactive(path, args, environment: environment)
+            }
+            return 0
+        }
+        let code = CLIEnvironment.$current.withValue(env) { DrypMain.run(["update", archive]) }
+        #expect(code == 0)
+        #expect(unpackDirs.count == 1)
+        #expect(!FileManager.default.fileExists(atPath: unpackDirs[0]))
+    }
+
+    @Test func aFailedUnpackLeavesNothingBehind() throws {
+        let h = try CLIHarness()
+        try writeManifest(h, source: "/old/src")
+        var env = h.env
+        var unpackDirs: [String] = []
+        env.run = { _, args, _ in unpackDirs.append(args.last ?? ""); return 1 }
+        let bogus = h.paths.home.appendingPathComponent("bad.tgz").path
+        let code = CLIEnvironment.$current.withValue(env) { DrypMain.run(["update", bogus]) }
+        #expect(code == 1)
+        #expect(unpackDirs.count == 1)
+        #expect(!FileManager.default.fileExists(atPath: unpackDirs[0]))
+    }
 }
