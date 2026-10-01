@@ -41,6 +41,7 @@ public enum Shell {
 
     /// Runs a tool attached to this terminal (sudo prompts, git, install.sh). Returns its exit status.
     public static func interactive(_ path: String, _ args: [String], environment: [String: String] = [:]) -> Int32 {
+        fflush(stdout)   // our own buffered output must appear before the child's
         let process = Process()
         process.executableURL = URL(fileURLWithPath: path)
         process.arguments = args

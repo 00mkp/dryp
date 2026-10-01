@@ -149,6 +149,6 @@ struct Uninstall: ParsableCommand {
                 throw ExitCode(1)
             }
         }
-        env.out("dryp is uninstalled. Remove the dryp aliases from ~/.zshrc if you added them.")
+        env.out("dryp is uninstalled.")
     }
 }
