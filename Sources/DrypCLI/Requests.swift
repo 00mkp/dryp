@@ -23,6 +23,10 @@ enum Requests {
             env.err("dryp: the \(mode.rawValue) request was replaced by another one before it took effect")
             return 1
         }
+        if mode == .caf && !applied.cafHeld {
+            env.err("dryp: caf was accepted but the power assertions aren't held — see `dryp status`")
+            return 1
+        }
         if mode == .nosleep && env.readSleepDisabled() != true {
             env.err("dryp: nosleep was accepted but SleepDisabled isn't 1 — see `dryp status`")
             return 1
@@ -44,10 +48,22 @@ enum Requests {
             env.err("dryp: \(error)")
             return 1
         }
-        guard awaitAck(rev: written.rev, env: env) != nil else { return notResponding(env) }
-        if touchesSleep && env.readSleepDisabled() == true {
-            env.err("dryp: sleep is still disabled; run: \(PmsetCommand.manualRestore)")
+        guard let applied = awaitAck(rev: written.rev, env: env) else { return notResponding(env) }
+        if modes.contains(.caf) && applied.cafHeld {
+            env.err("dryp: caf was stopped but the power assertions are still held — see `dryp status`")
             return 1
+        }
+        if touchesSleep {
+            switch env.readSleepDisabled() {
+            case true?:
+                env.err("dryp: sleep is still disabled; run: \(PmsetCommand.manualRestore)")
+                return 1
+            case nil:
+                env.err("dryp: couldn't read SleepDisabled — see `dryp status`")
+                return 1
+            case false?:
+                break
+            }
         }
         switch (modes.count, touchesSleep) {
         case (2, _): env.out("off; sleep is enabled")

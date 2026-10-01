@@ -5,7 +5,8 @@ import Testing
 
 final class FakeAssertions: PowerAssertions {
     var isHeld = false
-    func hold() throws { isHeld = true }
+    var ignoreHold = false
+    func hold() throws { if !ignoreHold { isHeld = true } }
     func release() { isHeld = false }
 }
 
@@ -42,6 +43,7 @@ final class CLIHarness {
     var runs: [(String, [String], [String: String])] = []
     var runStatus: Int32 = 0
     var nosleepInstalled = true
+    var sleepReadOverride: Bool?? = nil
     var out: [String] = []
     var err: [String] = []
     let now = Date(timeIntervalSince1970: 1_790_784_000)
@@ -60,7 +62,7 @@ final class CLIHarness {
         CLIEnvironment(
             paths: paths,
             now: { [unowned self] in self.now },
-            readSleepDisabled: { [unowned self] in self.sleep.disabled },
+            readSleepDisabled: { [unowned self] in self.sleepReadOverride ?? self.sleep.disabled },
             nosleepInstalled: { [unowned self] in self.nosleepInstalled },
             agent: AgentControl(
                 pid: { [unowned self] in self.agentRunning ? 4411 : nil },

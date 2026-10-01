@@ -36,7 +36,10 @@ public enum DrypMain {
 
 enum ModeCommand {
     static func validate(_ value: String?, hours: Bool) throws {
-        guard let value else { return }
+        guard let value else {
+            if hours { throw ValidationError("-h needs a number of hours") }
+            return
+        }
         if value == "off" {
             if hours { throw ValidationError("'off' doesn't take -h") }
             return

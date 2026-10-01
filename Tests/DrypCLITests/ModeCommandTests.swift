@@ -80,6 +80,21 @@ import Testing
         #expect(h.err.last?.contains("sudo pmset -a disablesleep 0") == true)
     }
 
+    @Test func unreadableSleepStateAfterStopExitsOne() throws {
+        let h = try CLIHarness()
+        h.dryp("nosleep")
+        h.sleepReadOverride = .some(nil)
+        #expect(h.dryp("nosleep", "off") == 1)
+        #expect(h.err.last?.contains("couldn't read SleepDisabled") == true)
+    }
+
+    @Test func cafNotHeldAfterAckExitsOne() throws {
+        let h = try CLIHarness()
+        h.caf.ignoreHold = true
+        #expect(h.dryp("caf", "30") == 1)
+        #expect(h.err.last?.contains("power assertions aren't held") == true)
+    }
+
     @Test func notRunningAgentIsStarted() throws {
         let h = try CLIHarness()
         h.agentRunning = false
@@ -97,7 +112,7 @@ import Testing
 
     // Review Focus 2: odd durations are usage errors (exit 2) and never start anything.
     @Test(arguments: [["caf", "0"], ["caf", "1.5"], ["caf", "abc"], ["caf", "99999999"], ["nosleep", "inf"],
-                      ["caf", "0.001", "-h"], ["caf", "off", "-h"], ["caf", "30", "extra"], ["bogus"]])
+                      ["caf", "0.001", "-h"], ["caf", "off", "-h"], ["caf", "30", "extra"], ["bogus"], ["caf", "-h"], ["nosleep", "--hours"]])
     func usageErrorsExitTwo(_ args: [String]) throws {
         let h = try CLIHarness()
         let code = CLIEnvironment.$current.withValue(h.env) { DrypMain.run(args) }
