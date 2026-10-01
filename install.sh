@@ -89,7 +89,7 @@ if [[ "$NOSLEEP" == ask ]]; then
 fi
 
 if [[ "$NOSLEEP" == yes ]]; then
-  if rule_works; then
+  if [[ -f "$SUDOERS" ]] && rule_works; then
     echo "==> nosleep: sudoers rule already in place"
   else
     echo "==> nosleep: installing $SUDOERS (sudo will ask for your password)"
@@ -98,16 +98,22 @@ if [[ "$NOSLEEP" == yes ]]; then
       NOSLEEP=no
     fi
   fi
-else
-  if [[ -f "$SUDOERS" ]]; then
-    echo "==> nosleep: removing $SUDOERS"
-    sudo /bin/rm -f "$SUDOERS" || echo "warning: could not remove $SUDOERS; remove it manually with: sudo rm $SUDOERS" >&2
-  fi
 fi
 
 echo "==> Stopping any running agent (active sessions end and sleep is restored)"
 launchctl bootout "$DOMAIN/$LABEL" >/dev/null 2>&1 || true
 pkill -f "$APP_DIR/dryp.app/Contents/MacOS/dryp" 2>/dev/null || true
+
+# Remove the sudoers rule only now that the agent is stopped, so its shutdown could still restore sleep.
+if [[ "$NOSLEEP" != yes && -f "$SUDOERS" ]]; then
+  if pmset -g live 2>/dev/null | grep -Eq 'SleepDisabled[[:space:]]+1'; then
+    echo "==> nosleep: sleep is still disabled; restoring it before removing the rule"
+    sudo /usr/bin/pmset -a disablesleep 0 \
+      || echo "warning: could not restore sleep; run: sudo pmset -a disablesleep 0" >&2
+  fi
+  echo "==> nosleep: removing $SUDOERS"
+  sudo /bin/rm -f "$SUDOERS" || echo "warning: could not remove $SUDOERS; remove it manually with: sudo rm $SUDOERS" >&2
+fi
 
 echo "==> Installing the dryp command"
 mkdir -p "$BINDIR" "$DATADIR"
@@ -157,8 +163,12 @@ MANIFEST_EOF
 echo "==> Starting"
 touch "$DATADIR/start"     # stay in the menu bar this launch even if Open at Login is off
 launchctl bootstrap "$DOMAIN" "$PLIST" || true
-sleep 1
-[[ "$(launchctl print "$DOMAIN/$LABEL" 2>/dev/null)" == *"pid = "* ]] || die "the agent didn't start. See ~/Library/Logs/dryp.err.log"
+started=no
+for _ in 1 2 3 4 5 6 7 8 9 10; do
+  sleep 0.5
+  if [[ "$(launchctl print "$DOMAIN/$LABEL" 2>/dev/null)" == *"pid = "* ]]; then started=yes; break; fi
+done
+[[ "$started" == yes ]] || die "the agent didn't start. See ~/Library/Logs/dryp.err.log"
 
 cat <<'DONE'
 
