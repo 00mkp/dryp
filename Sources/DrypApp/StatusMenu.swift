@@ -60,11 +60,7 @@ final class StatusMenu: NSObject, NSMenuDelegate {
         let r = app.reconciler!
         menu.removeAllItems()
         menu.addItem(statusRow(.caf))
-        if r.nosleepAvailable || r.state.nosleep != nil {
-            menu.addItem(statusRow(.nosleep))
-        } else {
-            menu.addItem(plain("Nosleep: not set up"))
-        }
+        menu.addItem(statusRow(.nosleep))
         if r.foreign {
             menu.addItem(plain("Sleep disabled outside dryp", dot: true))
             menu.addItem(action("Restore Sleep") { [weak self] in self?.app.restoreSleep() })
@@ -75,7 +71,7 @@ final class StatusMenu: NSObject, NSMenuDelegate {
         }
         menu.addItem(.separator())
         menu.addItem(modeSubmenu(.caf))
-        if r.nosleepAvailable || r.state.nosleep != nil {
+        if nosleepUsable {
             menu.addItem(modeSubmenu(.nosleep))
         } else {
             menu.addItem(action("Set Up Nosleep…") { Alerts.setUpNosleep() })
@@ -98,27 +94,70 @@ final class StatusMenu: NSObject, NSMenuDelegate {
         menu.addItem(action("Quit", key: "q") { [weak self] in self?.app.quitFromMenu() })
     }
 
+    private var nosleepUsable: Bool {
+        let r = app.reconciler!
+        return r.nosleepAvailable || r.state.nosleep != nil
+    }
+
     private func refreshStatusRows() {
         guard menu.numberOfItems >= 2 else { return }
-        let r = app.reconciler!
-        menu.item(at: 0)?.attributedTitle = statusTitle(.caf)
-        if r.nosleepAvailable || r.state.nosleep != nil { menu.item(at: 1)?.attributedTitle = statusTitle(.nosleep) }
+        for (index, mode) in Mode.allCases.enumerated() {
+            menu.item(at: index)?.attributedTitle = statusTitle(mode)
+        }
         refresh()
     }
 
-    private func statusTitle(_ mode: Mode) -> NSAttributedString {
-        let session = app.reconciler.state[mode]
-        let title = NSMutableAttributedString(string: "\(mode.title): \(Format.status(session, now: Date()))")
-        if session?.isUnlimited == true {
-            title.append(NSAttributedString(string: "  ●", attributes: [.foregroundColor: NSColor.systemOrange]))
+    // MARK: - Status rows (quick toggles)
+
+    /// What a status row shows on the right, and the colour of its dot.
+    private func statusDetail(_ mode: Mode) -> (text: String, dot: NSColor) {
+        let state = app.reconciler.state
+        if mode == .nosleep && !nosleepUsable { return ("Not set up", .tertiaryLabelColor) }
+        guard let session = state[mode] else {
+            return ("Off · click for \(Format.length(state.prefs.lastLength(mode)))", .tertiaryLabelColor)
         }
+        guard let until = session.until else { return ("No limit", .systemOrange) }
+        return ("\(Format.remaining(until.timeIntervalSince(Date()))) left", .systemGreen)
+    }
+
+    /// "Caffeinate ········· ● 42m left": the name on the left, a grey detail and dot right-aligned on a
+    /// shared tab stop, so both rows line up (the same layout as mutewake's status rows).
+    private func statusTitle(_ mode: Mode) -> NSAttributedString {
+        let font = NSFont.menuFont(ofSize: 0)
+        let detail = statusDetail(mode)
+        let style = NSMutableParagraphStyle()
+        style.tabStops = [NSTextTab(textAlignment: .right, location: statusTabLocation(font: font))]
+        let title = NSMutableAttributedString(string: "\(mode.title)\t", attributes: [.font: font, .paragraphStyle: style])
+        title.append(NSAttributedString(string: "●  ", attributes: [
+            .font: NSFont.systemFont(ofSize: font.pointSize * 0.7), .foregroundColor: detail.dot,
+            .baselineOffset: font.pointSize * 0.12, .paragraphStyle: style]))
+        title.append(NSAttributedString(string: detail.text, attributes: [
+            .font: font, .foregroundColor: NSColor.secondaryLabelColor, .paragraphStyle: style]))
         return title
     }
 
+    /// Wide enough for the longest name plus the longest detail either row shows right now.
+    private func statusTabLocation(font: NSFont) -> CGFloat {
+        func width(_ s: String) -> CGFloat { (s as NSString).size(withAttributes: [.font: font]).width }
+        let names = Mode.allCases.map { width($0.title) }.max() ?? 0
+        let details = Mode.allCases.map { width("●  " + statusDetail($0).text) }.max() ?? 0
+        return max(220, ceil(names + 40 + details))
+    }
+
+    /// Click while off: start the last length used. Click while on: stop.
     private func statusRow(_ mode: Mode) -> NSMenuItem {
-        let item = NSMenuItem(title: "", action: nil, keyEquivalent: "")
+        let item = action("") { [weak self] in
+            guard let self else { return }
+            if self.app.reconciler.state[mode] != nil {
+                self.app.stop([mode])
+            } else {
+                self.app.request(mode, seconds: self.app.reconciler.state.prefs.lastLength(mode))
+            }
+        }
         item.attributedTitle = statusTitle(mode)
-        item.isEnabled = true   // enabled with no action: drawn normally, not greyed
+        item.isEnabled = mode == .caf || nosleepUsable
+        let detail = statusDetail(mode).text
+        item.setAccessibilityLabel("\(mode.title), \(detail)")
         return item
     }
 
@@ -134,7 +173,7 @@ final class StatusMenu: NSObject, NSMenuDelegate {
     }
 
     private func modeSubmenu(_ mode: Mode) -> NSMenuItem {
-        let parent = NSMenuItem(title: mode == .caf ? "Caffeinate" : "Nosleep (lid closed)", action: nil, keyEquivalent: "")
+        let parent = NSMenuItem(title: mode == .caf ? "Caffeinate For" : "Nosleep For", action: nil, keyEquivalent: "")
         let sub = NSMenu()
         sub.autoenablesItems = false
         for (title, seconds) in presets {

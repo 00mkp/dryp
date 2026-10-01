@@ -20,6 +20,14 @@ import Testing
         #expect(h.state.nosleep?.until == h.now.addingTimeInterval(5400))
     }
 
+    @Test func startingRemembersTheLengthForTheQuickToggle() throws {
+        let h = try CLIHarness()
+        #expect(h.dryp("caf", "2", "-h") == 0)
+        #expect(h.state.prefs.lastLength(.caf) == 7200)
+        #expect(h.dryp("nosleep") == 0)
+        #expect(h.state.prefs.lastLength(.nosleep) == nil)
+    }
+
     @Test func bareFormsAreUnlimited() throws {
         let h = try CLIHarness()
         #expect(h.dryp("caf") == 0)

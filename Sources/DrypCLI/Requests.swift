@@ -9,7 +9,7 @@ enum Requests {
         let store = StateStore(paths: env.paths)
         let written: DrypState
         do {
-            written = try store.update { $0[mode] = session }
+            written = try store.update { $0.begin(mode, at: now, length: seconds) }
         } catch {
             env.err("dryp: \(error)")
             return 1

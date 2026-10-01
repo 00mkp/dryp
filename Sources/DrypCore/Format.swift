@@ -9,6 +9,15 @@ public enum Format {
         return m == 0 ? "\(h)h" : "\(h)h\(m)m"
     }
 
+    /// A session length for menus: "30 min", "1 hr", "1 hr 30 min", or "no limit".
+    public static func length(_ seconds: TimeInterval?) -> String {
+        guard let seconds else { return "no limit" }
+        let minutes = max(1, Int((seconds / 60).rounded()))
+        let h = minutes / 60, m = minutes % 60
+        if h == 0 { return "\(m) min" }
+        return m == 0 ? "\(h) hr" : "\(h) hr \(m) min"
+    }
+
     public static func clock(_ date: Date, timeZone: TimeZone = .current) -> String {
         let f = DateFormatter()
         f.locale = Locale(identifier: "en_US_POSIX")

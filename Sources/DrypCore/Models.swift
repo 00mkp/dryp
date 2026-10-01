@@ -24,8 +24,22 @@ public struct Prefs: Codable, Equatable, Sendable {
     public var showTimeCaf = false
     public var showTimeNosleep = false
     public var openAtLogin = true
+    /// The length each mode last started with, in whole minutes; 0 = no limit. Defaults to 1 hr.
+    public var lastCafMinutes = 60
+    public var lastNosleepMinutes = 60
 
     public init() {}
+
+    /// What the quick toggle starts: the last length used for this mode, nil meaning no limit.
+    public func lastLength(_ mode: Mode) -> TimeInterval? {
+        let minutes = mode == .caf ? lastCafMinutes : lastNosleepMinutes
+        return minutes == 0 ? nil : TimeInterval(minutes * 60)
+    }
+
+    public mutating func setLastLength(_ mode: Mode, _ seconds: TimeInterval?) {
+        let minutes = seconds.map { max(1, Int(($0 / 60).rounded())) } ?? 0
+        if mode == .caf { lastCafMinutes = minutes } else { lastNosleepMinutes = minutes }
+    }
 
     public func showsTime(_ mode: Mode) -> Bool { mode == .caf ? showTimeCaf : showTimeNosleep }
 
@@ -33,7 +47,7 @@ public struct Prefs: Codable, Equatable, Sendable {
         if mode == .caf { showTimeCaf = on } else { showTimeNosleep = on }
     }
 
-    enum CodingKeys: String, CodingKey { case showTimeCaf, showTimeNosleep, openAtLogin }
+    enum CodingKeys: String, CodingKey { case showTimeCaf, showTimeNosleep, openAtLogin, lastCafMinutes, lastNosleepMinutes }
 
     // Every key is optional on disk so older or hand-edited files still load.
     public init(from decoder: Decoder) throws {
@@ -41,6 +55,8 @@ public struct Prefs: Codable, Equatable, Sendable {
         showTimeCaf = try c.decodeIfPresent(Bool.self, forKey: .showTimeCaf) ?? false
         showTimeNosleep = try c.decodeIfPresent(Bool.self, forKey: .showTimeNosleep) ?? false
         openAtLogin = try c.decodeIfPresent(Bool.self, forKey: .openAtLogin) ?? true
+        lastCafMinutes = try c.decodeIfPresent(Int.self, forKey: .lastCafMinutes) ?? 60
+        lastNosleepMinutes = try c.decodeIfPresent(Int.self, forKey: .lastNosleepMinutes) ?? 60
     }
 }
 
@@ -64,6 +80,13 @@ public struct DrypState: Codable, Equatable, Sendable {
     }
 
     public var anyActive: Bool { caf != nil || nosleep != nil }
+
+    /// Starts (or replaces) a mode and remembers its length for the quick toggle. The CLI and the menu both
+    /// start sessions through here.
+    public mutating func begin(_ mode: Mode, at now: Date, length seconds: TimeInterval?) {
+        self[mode] = Session(started: now, until: seconds.map { now.addingTimeInterval($0) })
+        prefs.setLastLength(mode, seconds)
+    }
 
     enum CodingKeys: String, CodingKey { case version, rev, caf, nosleep, restoreSleep, prefs }
 

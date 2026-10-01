@@ -80,9 +80,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         let now = Date().wholeSeconds
         let written: DrypState
         do {
-            written = try StateStore(paths: paths).update {
-                $0[mode] = Session(started: now, until: seconds.map { now.addingTimeInterval($0) })
-            }
+            written = try StateStore(paths: paths).update { $0.begin(mode, at: now, length: seconds) }
         } catch {
             Alerts.info("Couldn't start \(mode.title)", "\(error)")
             return
