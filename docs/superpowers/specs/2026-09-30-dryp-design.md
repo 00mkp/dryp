@@ -142,7 +142,7 @@ agent after it acts:
 
 ## Agent
 
-An accessory `NSApplication` (`LSUIElement`) inside `Dryp.app`, run by launchd.
+An accessory `NSApplication` (`LSUIElement`) inside `dryp.app`, run by launchd.
 Every input — a state file change, a timer, a battery change, waking, a clock
 change, a menu action — goes through one reconcile step:
 
@@ -177,7 +177,7 @@ Components:
 
 ### Single instance
 
-The launchd-managed process is the only agent. When `Dryp.app` is opened any
+The launchd-managed process is the only agent. When `dryp.app` is opened any
 other way (Finder, Spotlight), it detects that it was not started by launchd
 (`XPC_SERVICE_NAME` ≠ the label), kickstarts the launchd job, and exits.
 
@@ -202,7 +202,7 @@ dot stays). Neither, one, or both can be on.
 
 ### App icon
 
-`Dryp.app` has a real icon, so Finder, Spotlight, System Settings (Login Items,
+`dryp.app` has a real icon, so Finder, Spotlight, System Settings (Login Items,
 Notifications) and the About panel show it even though there is no Dock icon.
 Like peel, it is drawn in code and turned into an `.icns` at build time — no
 binary is checked in: the white `cup.and.saucer.fill` glyph on a warm
@@ -309,7 +309,7 @@ whatever the setting.
 **`install.sh`**
 
 - Checks macOS ≥ 13 and the Swift toolchain, then `swift build -c release`.
-- Assembles `Dryp.app` (bundle ID `io.github.00mkp.dryp`, `LSUIElement`) in
+- Assembles `dryp.app` (bundle ID `io.github.00mkp.dryp`, `LSUIElement`) in
   `$APP_DIR` (default `~/Applications`) and ad-hoc signs it. Installs the CLI
   to `~/.local/bin/dryp`.
 - Generates `~/Library/LaunchAgents/io.github.00mkp.dryp.plist`
