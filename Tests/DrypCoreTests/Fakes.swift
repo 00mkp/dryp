@@ -33,7 +33,12 @@ final class FakeSleep: SleepSetting {
 
 final class FakePower: PowerSource {
     var info = PowerInfo.ac
-    func current() -> PowerInfo { info }
+    /// Runs (once) the next time the reconciler asks for power info: simulates another process writing mid-pass.
+    var onCurrent: (() -> Void)?
+    func current() -> PowerInfo {
+        if let hook = onCurrent { onCurrent = nil; hook() }
+        return info
+    }
 }
 
 final class FakeNotifier: Notifier {

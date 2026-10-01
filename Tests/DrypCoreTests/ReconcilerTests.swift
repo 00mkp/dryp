@@ -157,4 +157,42 @@ import Testing
         #expect(w.store.current().caf == nil)
         #expect(w.appliedStore.read().rejected?.mode == .caf)
     }
+
+    // Fix round 1, finding 1: a request written between the read and the clear is acted on in the same call.
+    @Test func requestWrittenMidPassIsActedOnNotJustAcknowledged() throws {
+        let w = try World()
+        try w.request(.caf, for: .minutes(30))
+        w.reconciler.reconcile()
+        w.clock.advance(.minutes(30))
+        w.power.onCurrent = { try? w.request(.nosleep, for: nil) }
+        w.reconciler.reconcile()
+        #expect(w.sleep.disabled)
+        #expect(w.appliedStore.read().nosleepSet)
+        #expect(w.appliedStore.read().rev == w.store.current().rev)
+        #expect(w.store.current().caf == nil)
+        #expect(w.notifier.posted == [.ended(Ending(mode: .caf, reason: .expired))])
+    }
+
+    // Fix round 1, finding 2: a failed state write neither announces the end nor busy-loops.
+    @Test func failedClearDoesNotAnnounceOrSpin() throws {
+        let w = try World()
+        try w.request(.caf, for: .minutes(30))
+        w.reconciler.reconcile()
+        w.clock.advance(.minutes(31))
+        let fm = FileManager.default
+        let dir = w.paths.configDir.path
+        try fm.setAttributes([.posixPermissions: 0o500], ofItemAtPath: dir)
+        defer { try? fm.setAttributes([.posixPermissions: 0o700], ofItemAtPath: dir) }
+        let first = w.reconciler.reconcile()
+        let second = w.reconciler.reconcile()
+        #expect(!w.caf.isHeld)
+        #expect(w.notifier.posted.isEmpty)
+        let earliest = w.clock.now.addingTimeInterval(30)
+        #expect(try #require(first) >= earliest)
+        #expect(try #require(second) >= earliest)
+        try fm.setAttributes([.posixPermissions: 0o700], ofItemAtPath: dir)
+        w.reconciler.reconcile()
+        #expect(w.store.current().caf == nil)
+        #expect(w.notifier.posted == [.ended(Ending(mode: .caf, reason: .expired))])
+    }
 }

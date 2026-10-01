@@ -43,7 +43,14 @@ public final class Reconciler {
 
     /// Returns when the agent next needs to look (a warning, a deadline, or a restore retry), or nil.
     @discardableResult
-    public func reconcile() -> Date? {
+    public func reconcile() -> Date? { reconcile(depth: 0, carried: []) }
+
+    /// Seconds to wait before retrying when state.json can't be written (avoids a busy loop on a stale deadline).
+    private static let writeFailureBackoff: TimeInterval = 30
+    private static let maxRestarts = 3
+
+    /// `carried` holds endings whose sessions an earlier, restarted pass already cleared.
+    private func reconcile(depth: Int, carried: [Ending]) -> Date? {
         let t = now()
         if store.read() == .corrupt, (try? store.quarantineCorrupt()) == true {
             log("state.json was unreadable; moved it to state.json.bad")
@@ -54,7 +61,30 @@ public final class Reconciler {
         let decision = Policy.decide(Observation(now: t, bootTime: bootTime, state: current, applied: applied,
                                                  power: power.current(), nosleepAvailable: nosleepAvailable))
         if let r = decision.rejection { reject(r) }
-        if !decision.clear.isEmpty { current = clear(decision.clear, fallback: current) }
+        var endings = carried + decision.endings
+        var clearFailed = false
+        if !decision.clear.isEmpty {
+            let observed = current
+            var expected = observed
+            for mode in decision.clear.keys { expected[mode] = nil }
+            let result = clear(decision.clear, fallback: observed)
+            current = result
+            // A cleared session that is still there means the write failed: don't announce its end yet.
+            let failed = decision.clear.filter { current[$0.key] == $0.value }
+            if !failed.isEmpty {
+                clearFailed = true
+                endings.removeAll { failed[$0.mode] != nil }
+            } else {
+                var a = current, b = expected
+                a.rev = 0; b.rev = 0
+                // Another writer changed the requests mid-pass: the decision is stale, so redo it before
+                // touching any driver.
+                if a != b && depth < Reconciler.maxRestarts {
+                    log("state.json changed during reconcile; deciding again")
+                    return reconcile(depth: depth + 1, carried: endings)
+                }
+            }
+        }
 
         if decision.holdCaf && !caf.isHeld {
             do {
@@ -85,7 +115,7 @@ public final class Reconciler {
         }
         foreignNotified = foreign
 
-        for e in decision.endings {
+        for e in endings {
             notifier.post(.ended(e))
             log("\(e.mode.rawValue): ended (\(e.reason))")
         }
@@ -99,7 +129,11 @@ public final class Reconciler {
         applied.cafHeld = caf.isHeld
         persistApplied()
 
-        let wake = Schedule.nextWake(current, now: t, warned: warned)
+        var wake = Schedule.nextWake(current, now: t, warned: warned)
+        if clearFailed {
+            let earliest = t.addingTimeInterval(Reconciler.writeFailureBackoff)
+            wake = max(wake ?? earliest, earliest)
+        }
         let retry = applied.restoreFailed ? nextRetry : nil
         return [wake, retry].compactMap { $0 }.min()
     }
