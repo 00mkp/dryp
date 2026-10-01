@@ -73,7 +73,8 @@ ends. nosleep stops by itself on battery at 10 %.
 nosleep changes a system setting that survives closing the terminal and rebooting, so dryp:
 
 - restores sleep on every way it stops — Quit, `dryp app stop`, logout, shutdown, uninstall —
-  and only exits once `SleepDisabled` reads 0;
+  and a normal Quit won't finish until `SleepDisabled` reads 0. Forced exits (SIGTERM, logout) and
+  Quit Anyway exit with the failure flagged, and the restore is retried at the next login;
 - is restarted by launchd if it crashes, and checks at every login, so a power cut mid-session
   is cleaned up at the next boot;
 - never undoes a `disablesleep` it didn't set without being asked, but flags it in the menu
