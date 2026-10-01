@@ -152,9 +152,42 @@ public final class Reconciler {
         }
     }
 
-    /// Completed in Task 9.
+    /// Quit, `dryp app stop`, uninstall, logout and SIGTERM all end here. Clears both modes first so nothing
+    /// resumes them, releases the caf hold, and restores sleep if dryp set it. Returns true when
+    /// SleepDisabled reads 0 (or dryp never set it). A foreign disablesleep is left alone.
     @discardableResult
-    public func shutdown() -> Bool { true }
+    public func shutdown() -> Bool {
+        do {
+            try store.update { s in
+                s.caf = nil
+                s.nosleep = nil
+            }
+        } catch {
+            log("shutdown: couldn't clear state.json: \(error)")
+        }
+        if caf.isHeld {
+            caf.release()
+            log("caf: assertions released (shutdown)")
+        }
+        var restored = true
+        if applied.nosleepSet {
+            sleep.set(disabled: false)
+            restored = sleep.read() == false
+            if restored {
+                applied.nosleepSet = false
+                applied.restoreFailed = false
+                log("shutdown: sleep restored")
+            } else {
+                applied.restoreFailed = true
+                log("shutdown: couldn't restore sleep")
+            }
+        }
+        state = store.current()
+        applied.rev = state.rev
+        applied.cafHeld = false
+        persistApplied()
+        return restored
+    }
 
     // MARK: - Steps
 
@@ -189,18 +222,48 @@ public final class Reconciler {
         return true
     }
 
-    /// Completed in Task 9 (retries and failure reporting). Happy path: restore and disown.
+    /// Restores sleep if dryp set it. On failure: flag, notify once, and retry on the backoff schedule.
     private func restoreSleepIfOwned(at t: Date) {
         guard applied.nosleepSet else { return }
+        if applied.restoreFailed, let next = nextRetry, t < next { return }
         sleep.set(disabled: false)
         if sleep.read() == false {
             applied.nosleepSet = false
-            log("nosleep: sleep restored")
+            log(applied.restoreFailed ? "nosleep: sleep restored after \(restoreFailures) failed attempts" : "nosleep: sleep restored")
+            applied.restoreFailed = false
+            restoreFailures = 0
+            nextRetry = nil
+        } else {
+            restoreFailures += 1
+            let delay = Schedule.retryDelay(afterFailures: restoreFailures)
+            nextRetry = t.addingTimeInterval(delay)
+            if !applied.restoreFailed { notifier.post(.restoreFailed) }
+            applied.restoreFailed = true
+            log("nosleep: restore failed, retrying in \(Int(delay))s")
         }
     }
 
-    /// Completed in Task 9.
-    private func handleRestoreRequest(_ current: DrypState, disabling: Bool) -> DrypState { current }
+    /// The one-shot `restoreSleep` request (`dryp nosleep off`, `dryp off`, menu Restore Sleep / Retry):
+    /// undo a foreign disablesleep or retry a failed restore now. Ignored while nosleep is wanted.
+    private func handleRestoreRequest(_ current: DrypState, disabling: Bool) -> DrypState {
+        guard current.restoreSleep else { return current }
+        if !disabling {
+            if applied.nosleepSet {
+                nextRetry = nil
+                restoreSleepIfOwned(at: now())
+            } else if sleep.read() == true {
+                sleep.set(disabled: false)
+                log(sleep.read() == false ? "restored sleep disabled outside dryp (by request)"
+                                          : "couldn't restore sleep disabled outside dryp")
+            }
+        }
+        do {
+            return try store.update { $0.restoreSleep = false }
+        } catch {
+            log("couldn't clear restoreSleep: \(error)")
+            return current
+        }
+    }
 
     private func persistApplied() {
         do { try appliedStore.write(applied) } catch { log("couldn't write applied.json: \(error)") }
